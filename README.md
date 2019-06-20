@@ -9,6 +9,15 @@ interface in Racket.
 
 ## Usage
 
+Ensure you have `libcrypto` in your `crypto-factories`:
+
+```racket
+(require crypto
+         crypto/libcrypto)
+
+(crypto-factories (list libcrypto))
+```
+
 Create a client instance:
 
 ```racket
@@ -17,7 +26,7 @@ Create a client instance:
                  #:pk-path "/path/to/private.key"))
 ```
 
-*note: the key must be in DER format*
+*note: the key must be in DER format.*
 
 Create an `xexpr?` representing an order:
 
