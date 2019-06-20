@@ -15,7 +15,7 @@ Ensure you have `libcrypto` in your `crypto-factories`:
 (require crypto
          crypto/libcrypto)
 
-(crypto-factories (list libcrypto))
+(crypto-factories (list libcrypto-factory))
 ```
 
 Create a client instance:
