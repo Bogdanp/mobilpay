@@ -58,14 +58,13 @@ values using `data->order`:
 
 (define (confirmation-page req)
   (define bindings (request-bindings req))
-  (define encrypted-order-data (bytes->string/utf-8 (binding:form-value (bindings-assq #"data" bindings))))
-  (define encrypted-shared-key (bytes->string/utf-8 (binding:form-value (bindings-assq #"env_key" bindings))))
+  (define encrypted-order-data (binding:form-value (bindings-assq #"data" bindings)))
+  (define encrypted-shared-key (binding:form-value (bindings-assq #"env_key" bindings)))
   (define order+mobilpay-data
     (data->order mobilpay encrypted-order-data encrypted-shared-key))
 
   (displayln (se-path* '(mobilpay action) order+mobilpay-data))
   (displayln (se-path* '(mobilpay error) order+mobilpay-data)))
-
 ```
 
 You will get multiple payment notifications per payment, each

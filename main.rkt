@@ -80,7 +80,7 @@
      (return ,return-url))))
 
 (define/contract (order->data mobilpay order)
-  (-> mobilpay? order? (values string? string?))
+  (-> mobilpay? order? (values bytes? bytes?))
 
   (define data
     (with-output-to-bytes
@@ -92,20 +92,20 @@
   (define shared-key (generate-cipher-key cipher))
   (define encrypted-data (encrypt cipher shared-key #"" data))
   (define encrypted-shared-key (pk-encrypt (mobilpay-pk mobilpay) shared-key))
-  (values (bytes->string/utf-8 (base64-encode encrypted-data #""))
-          (bytes->string/utf-8 (base64-encode encrypted-shared-key #""))))
+  (values (base64-encode encrypted-data #"")
+          (base64-encode encrypted-shared-key #"")))
 
 (define/contract (data->order mobilpay encrypted-data encrypted-shared-key)
-  (-> mobilpay? string? string? (or/c false/c order?))
+  (-> mobilpay? bytes? bytes? (or/c false/c order?))
 
   (with-handlers ([exn:fail? (lambda _ #f)])
     (define shared-key
       (pk-decrypt (mobilpay-pk mobilpay)
-                  (base64-decode (string->bytes/utf-8 encrypted-shared-key))))
+                  (base64-decode encrypted-shared-key)))
 
     (define data
       (decrypt (get-cipher (list 'rc4 'stream)) shared-key #""
-               (base64-decode (string->bytes/utf-8 encrypted-data))))
+               (base64-decode encrypted-data)))
 
     (string->xexpr (bytes->string/utf-8 data))))
 
@@ -182,5 +182,5 @@
          (define-values (encrypted-data encrypted-shared-key)
            (order->data client order))
 
-         (check-false (data->order client encrypted-data "invalid"))
-         (check-false (data->order client "invalid" encrypted-shared-key))))))))
+         (check-false (data->order client encrypted-data #"invalid"))
+         (check-false (data->order client #"invalid" encrypted-shared-key))))))))
