@@ -9,6 +9,11 @@ interface in Racket.
 
 ## Usage
 
+Download the public certificate and your private key from the Mobilpay
+dashboard and then convert the certificate into a public key:
+
+    openssl x501 -noout -pubkey -in certificate.cer > certificate.pub
+
 Ensure you have `libcrypto` in your `crypto-factories`:
 
 ```racket
@@ -23,7 +28,8 @@ Create a client instance:
 ```racket
 (define mobilpay
   (make-mobilpay #:signature "example"
-                 #:pk-path "/path/to/private.key"))
+                 #:pubk-path "/path/to/certificate.pub"
+                 #:privk-path "/path/to/private.key"))
 ```
 
 Create an `xexpr?` representing an order:

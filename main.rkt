@@ -25,30 +25,33 @@
   xexpr?)
 
 (struct mobilpay
-  (signature pk)
+  (signature pubk privk)
   #:transparent)
 
-(define (call-with-pk path p)
-  (p
-   (call-with-input-file path
-     (lambda (in)
-       (define data
-         (base64-decode
-          (string->bytes/utf-8
-           (string-join (filter (lambda (line)
-                                  (not (and (string-prefix? line "-----")
-                                            (string-suffix? line "-----"))))
-                                (port->lines in))
-                        ""))))
+(define (path->pk path #:fmt [fmt 'SubjectPublicKeyInfo])
+  (call-with-input-file path
+    (lambda (in)
+      (define data
+        (base64-decode
+         (string->bytes/utf-8
+          (string-join (filter (lambda (line)
+                                 (not (and (string-prefix? line "-----")
+                                           (string-suffix? line "-----"))))
+                               (port->lines in))
+                       ""))))
 
-       (datum->pk-key data 'PrivateKeyInfo)))))
+      (datum->pk-key data fmt))))
 
 (define/contract (make-mobilpay #:signature signature
-                                #:pk-path pk-path)
+                                #:pubk-path pubk-path
+                                #:privk-path privk-path)
   (-> #:signature non-empty-string?
-      #:pk-path path-string?
+      #:pubk-path path-string?
+      #:privk-path path-string?
       mobilpay?)
-  (call-with-pk pk-path (curry mobilpay signature)))
+  (mobilpay signature
+            (path->pk pubk-path)
+            (path->pk privk-path #:fmt 'PrivateKeyInfo)))
 
 (define/contract (mobilpay-endpoint [which 'production])
   (-> (or/c 'production 'sandbox) non-empty-string?)
@@ -102,8 +105,8 @@
 
   (define cipher (get-cipher (list 'rc4 'stream)))
   (define shared-key (generate-cipher-key cipher))
-  (define encrypted-data (encrypt cipher shared-key #"" data))
-  (define encrypted-shared-key (pk-encrypt (mobilpay-pk mobilpay) shared-key))
+  (define encrypted-data (encrypt cipher shared-key #f data))
+  (define encrypted-shared-key (pk-encrypt (mobilpay-pubk mobilpay) shared-key #:pad 'pkcs1-v1.5))
   (values (base64-encode encrypted-data #"")
           (base64-encode encrypted-shared-key #"")))
 
@@ -112,11 +115,12 @@
 
   (with-handlers ([exn:fail? (lambda _ #f)])
     (define shared-key
-      (pk-decrypt (mobilpay-pk mobilpay)
-                  (base64-decode encrypted-shared-key)))
+      (pk-decrypt (mobilpay-privk mobilpay)
+                  (base64-decode encrypted-shared-key)
+                  #:pad 'pkcs1-v1.5))
 
     (define data
-      (decrypt (get-cipher (list 'rc4 'stream)) shared-key #""
+      (decrypt (get-cipher (list 'rc4 'stream)) shared-key #f
                (base64-decode encrypted-data)))
 
     (string->xexpr (bytes->string/utf-8 data))))
@@ -134,8 +138,8 @@
            xml/path)
 
   (parameterize ([crypto-factories (list libcrypto-factory)])
-    (define client
-      (mobilpay "example" (generate-private-key 'rsa)))
+    (define pk (generate-private-key 'rsa))
+    (define client (mobilpay "example" pk pk))
 
     (define order
       (parameterize ([current-clock (lambda () 0)]
