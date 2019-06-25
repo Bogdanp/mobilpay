@@ -26,8 +26,6 @@ Create a client instance:
                  #:pk-path "/path/to/private.key"))
 ```
 
-*note: the key must be in DER format.*
-
 Create an `xexpr?` representing an order:
 
 ```racket

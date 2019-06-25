@@ -5,6 +5,7 @@
          net/base64
          racket/contract
          racket/format
+         racket/function
          racket/match
          racket/port
          racket/string
@@ -27,16 +28,27 @@
   (signature pk)
   #:transparent)
 
+(define (call-with-pk path p)
+  (p
+   (call-with-input-file path
+     (lambda (in)
+       (define data
+         (base64-decode
+          (string->bytes/utf-8
+           (string-join (filter (lambda (line)
+                                  (not (and (string-prefix? line "-----")
+                                            (string-suffix? line "-----"))))
+                                (port->lines in))
+                        ""))))
+
+       (datum->pk-key data 'PrivateKeyInfo)))))
+
 (define/contract (make-mobilpay #:signature signature
                                 #:pk-path pk-path)
   (-> #:signature non-empty-string?
       #:pk-path path-string?
       mobilpay?)
-  (call-with-input-file pk-path
-    (lambda (in)
-      (define data (port->bytes in))
-      (define pk (datum->pk-key data 'RSAPrivateKey))
-      (mobilpay signature pk))))
+  (call-with-pk pk-path (curry mobilpay signature)))
 
 (define/contract (mobilpay-endpoint [which 'production])
   (-> (or/c 'production 'sandbox) non-empty-string?)
