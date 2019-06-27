@@ -19,14 +19,41 @@
  make-order
  order?
  order->data
- data->order)
+ data->order
 
-(define order?
-  xexpr?)
+ make-customer
+ customer?)
+
+(define order? xexpr?)
+(define customer? xexpr?)
 
 (struct mobilpay
   (signature pubk privk)
   #:transparent)
+
+(define/contract (make-customer #:business? [business? #f]
+                                #:email email
+                                #:phone phone
+                                #:first-name first-name
+                                #:last-name last-name
+                                #:address address)
+  (->* (#:email non-empty-string?
+        #:phone non-empty-string?
+        #:first-name non-empty-string?
+        #:last-name non-empty-string?
+        #:address non-empty-string?)
+       (#:business? boolean?)
+       xexpr?)
+  `(contact_info
+    (billing
+     ([type ,(if business?
+                 "company"
+                 "person")])
+     (first_name ,first-name)
+     (last_name ,last-name)
+     (address ,address)
+     (email ,email)
+     (mobile_phone ,phone))))
 
 (define (path->pk path #:fmt [fmt 'SubjectPublicKeyInfo])
   (call-with-input-file path
@@ -64,6 +91,7 @@
                              #:currency [currency 'RON]
                              #:amount amount
                              #:description description
+                             #:customer [customer #f]
                              #:params [params null]
                              #:confirmation-url confirmation-url
                              #:return-url return-url)
@@ -74,6 +102,7 @@
         #:confirmation-url non-empty-string?
         #:return-url non-empty-string?)
        (#:currency (or/c 'EUR 'USD 'RON)
+        #:customer (or/c false/c customer?)
         #:params (listof (cons/c non-empty-string? string?)))
        order?)
 
@@ -85,7 +114,8 @@
     (invoice
      ([currency ,(symbol->string currency)]
       [amount ,(cents->string amount)])
-     (details ,description))
+     (details ,description)
+     ,@(if customer (list customer) null))
     (params
      ,@(map (lambda (pair)
               `(param (name ,(car pair))
@@ -151,6 +181,21 @@
                     #:confirmation-url "https://example.com/confirm"
                     #:return-url "https://example.com/return")))
 
+    (define order+address
+      (parameterize ([current-clock (lambda () 0)]
+                     [current-timezone "UTC"])
+        (make-order client
+                    #:order-id "MAT19124"
+                    #:amount 7990
+                    #:description "Plata pe matchacha.ro"
+                    #:customer (make-customer #:email "bogdan@defn.io"
+                                              #:phone "0755555555"
+                                              #:first-name "Bogdan"
+                                              #:last-name "Popa"
+                                              #:address "Someplace")
+                    #:confirmation-url "https://example.com/confirm"
+                    #:return-url "https://example.com/return")))
+
     (run-tests
      (test-suite
       "mobilpay"
@@ -176,6 +221,29 @@
                           ([currency "RON"]
                            [amount "79.90"])
                           (details "Plata pe matchacha.ro"))
+                         (params)
+                         (url
+                          (confirm "https://example.com/confirm")
+                          (return "https://example.com/return"))))
+
+         (check-equal? order+address
+                       '(order
+                         ([type "card"]
+                          [id "MAT19124"]
+                          [timestamp "19700101000000"])
+                         (signature "example")
+                         (invoice
+                          ([currency "RON"]
+                           [amount "79.90"])
+                          (details "Plata pe matchacha.ro")
+                          (contact_info
+                           (billing
+                            ([type "person"])
+                            (first_name "Bogdan")
+                            (last_name "Popa")
+                            (address "Someplace")
+                            (email "bogdan@defn.io")
+                            (mobile_phone "0755555555"))))
                          (params)
                          (url
                           (confirm "https://example.com/confirm")
