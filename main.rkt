@@ -57,7 +57,7 @@
   (-> (or/c 'production 'sandbox) non-empty-string?)
   (match which
     ['production "https://secure.mobilpay.ro"]
-    ['sandbox    "http://sandboxsecure.mobilpay.ro"]))
+    ['sandbox    "https://sandboxsecure.mobilpay.ro"]))
 
 (define/contract (make-order mobilpay
                              #:order-id order-id
