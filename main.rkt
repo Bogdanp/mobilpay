@@ -8,7 +8,8 @@
          racket/match
          racket/port
          racket/string
-         xml)
+         xml
+         "ffi.rkt")
 
 (provide
  (contract-out
