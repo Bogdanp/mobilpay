@@ -3,26 +3,51 @@
 (require crypto
          gregor
          net/base64
-         racket/contract
+         racket/contract/base
          racket/format
-         racket/function
          racket/match
          racket/port
          racket/string
          xml)
 
 (provide
- make-mobilpay
- mobilpay?
- mobilpay-endpoint
-
- make-order
- order?
- order->data
- data->order
-
- make-customer
- customer?)
+ (contract-out
+  [mobilpay?
+   (-> any/c boolean?)]
+  [make-mobilpay
+   (-> #:signature non-empty-string?
+       #:pubk-path path-string?
+       #:privk-path path-string?
+       mobilpay?)]
+  [mobilpay-endpoint
+   (-> (or/c 'production 'sandbox) non-empty-string?)]
+  [order?
+   (-> any/c boolean?)]
+  [make-order
+   (->* [mobilpay?
+         #:order-id non-empty-string?
+         #:amount (and/c exact-integer? (integer-in 0 9999900))
+         #:description non-empty-string?
+         #:confirmation-url non-empty-string?
+         #:return-url non-empty-string?]
+        [#:currency (or/c 'EUR 'USD 'RON)
+         #:customer (or/c #f customer?)
+         #:params (listof (cons/c non-empty-string? string?))]
+        order?)]
+  [order->data
+   (-> mobilpay? order? (values bytes? bytes?))]
+  [data->order
+   (-> mobilpay? bytes? bytes? (or/c #f order?))]
+  [customer?
+   (-> any/c boolean?)]
+  [make-customer
+   (->* [#:email non-empty-string?
+         #:phone non-empty-string?
+         #:first-name non-empty-string?
+         #:last-name non-empty-string?
+         #:address non-empty-string?]
+        [#:business? boolean?]
+        xexpr?)]))
 
 (define order? xexpr?)
 (define customer? xexpr?)
@@ -31,19 +56,13 @@
   (signature pubk privk)
   #:transparent)
 
-(define/contract (make-customer #:business? [business? #f]
-                                #:email email
-                                #:phone phone
-                                #:first-name first-name
-                                #:last-name last-name
-                                #:address address)
-  (->* (#:email non-empty-string?
-        #:phone non-empty-string?
-        #:first-name non-empty-string?
-        #:last-name non-empty-string?
-        #:address non-empty-string?)
-       (#:business? boolean?)
-       xexpr?)
+(define (make-customer
+         #:business? [business? #f]
+         #:email email
+         #:phone phone
+         #:first-name first-name
+         #:last-name last-name
+         #:address address)
   `(contact_info
     (billing
      ([type ,(if business?
@@ -69,48 +88,34 @@
 
       (datum->pk-key data fmt))))
 
-(define/contract (make-mobilpay #:signature signature
-                                #:pubk-path pubk-path
-                                #:privk-path privk-path)
-  (-> #:signature non-empty-string?
-      #:pubk-path path-string?
-      #:privk-path path-string?
-      mobilpay?)
+(define (make-mobilpay
+         #:signature signature
+         #:pubk-path pubk-path
+         #:privk-path privk-path)
   (mobilpay signature
             (path->pk pubk-path)
             (path->pk privk-path #:fmt 'PrivateKeyInfo)))
 
-(define/contract (mobilpay-endpoint [which 'production])
-  (-> (or/c 'production 'sandbox) non-empty-string?)
+(define (mobilpay-endpoint [which 'production])
   (match which
     ['production "https://secure.mobilpay.ro"]
     ['sandbox    "https://sandboxsecure.mobilpay.ro"]))
 
-(define/contract (make-order mobilpay
-                             #:order-id order-id
-                             #:currency [currency 'RON]
-                             #:amount amount
-                             #:description description
-                             #:customer [customer #f]
-                             #:params [params null]
-                             #:confirmation-url confirmation-url
-                             #:return-url return-url)
-  (->* (mobilpay?
-        #:order-id non-empty-string?
-        #:amount (and/c exact-integer? (integer-in 0 9999900))
-        #:description non-empty-string?
-        #:confirmation-url non-empty-string?
-        #:return-url non-empty-string?)
-       (#:currency (or/c 'EUR 'USD 'RON)
-        #:customer (or/c false/c customer?)
-        #:params (listof (cons/c non-empty-string? string?)))
-       order?)
-
+(define (make-order
+         #:order-id order-id
+         #:currency [currency 'RON]
+         #:amount amount
+         #:description description
+         #:customer [customer #f]
+         #:params [params null]
+         #:confirmation-url confirmation-url
+         #:return-url return-url
+         m)
   `(order
     ([type "card"]
      [id ,order-id]
      [timestamp ,(~t (now) "YYYYMMddHHmmss")])
-    (signature ,(mobilpay-signature mobilpay))
+    (signature ,(mobilpay-signature m))
     (invoice
      ([currency ,(symbol->string currency)]
       [amount ,(cents->string amount)])
@@ -124,35 +129,28 @@
      (confirm ,confirmation-url)
      (return ,return-url))))
 
-(define/contract (order->data mobilpay order)
-  (-> mobilpay? order? (values bytes? bytes?))
-
+(define (order->data m order)
   (define data
     (with-output-to-bytes
-      (lambda _
+      (lambda ()
         (displayln "<?xml version=\"1.0\" encoding=\"utf-8\"?>")
         (write-xml/content (xexpr->xml order)))))
-
-  (define cipher (get-cipher (list 'rc4 'stream)))
+  (define cipher (get-cipher '(rc4 stream)))
   (define shared-key (generate-cipher-key cipher))
   (define encrypted-data (encrypt cipher shared-key #f data))
-  (define encrypted-shared-key (pk-encrypt (mobilpay-pubk mobilpay) shared-key #:pad 'pkcs1-v1.5))
+  (define encrypted-shared-key (pk-encrypt (mobilpay-pubk m) shared-key #:pad 'pkcs1-v1.5))
   (values (base64-encode encrypted-data #"")
           (base64-encode encrypted-shared-key #"")))
 
-(define/contract (data->order mobilpay encrypted-data encrypted-shared-key)
-  (-> mobilpay? bytes? bytes? (or/c false/c order?))
-
-  (with-handlers ([exn:fail? (lambda _ #f)])
+(define (data->order m encrypted-data encrypted-shared-key)
+  (with-handlers ([exn:fail? (lambda (_) #f)])
     (define shared-key
-      (pk-decrypt (mobilpay-privk mobilpay)
+      (pk-decrypt (mobilpay-privk m)
                   (base64-decode encrypted-shared-key)
                   #:pad 'pkcs1-v1.5))
-
     (define data
-      (decrypt (get-cipher (list 'rc4 'stream)) shared-key #f
+      (decrypt (get-cipher '(rc4 stream)) shared-key #f
                (base64-decode encrypted-data)))
-
     (string->xexpr (bytes->string/utf-8 data))))
 
 (define (cents->string c)
