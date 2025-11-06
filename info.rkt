@@ -5,5 +5,6 @@
 (define collection "mobilpay")
 (define deps '("base"
                "crypto-lib"
-               "gregor-lib"))
+               "gregor-lib"
+               "version-case"))
 (define build-deps '("rackunit-lib"))

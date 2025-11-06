@@ -1,6 +1,7 @@
 #lang racket/base
 
-(require crypto
+(require (for-syntax racket/base)
+         crypto
          gregor
          net/base64
          racket/contract/base
@@ -8,8 +9,14 @@
          racket/match
          racket/port
          racket/string
-         xml
-         "ffi.rkt")
+         version-case
+         xml)
+
+(version-case
+ [(version>= (version) "9.0.0.4")
+  (require openssl/legacy)]
+ [else
+  (require "ffi.rkt")])
 
 (provide
  (contract-out
